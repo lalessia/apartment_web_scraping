@@ -1,107 +1,81 @@
-'''
-- SCRAPING FIRST PAGE OF immobiliare.it 
-    -Library: BeautifulSoup 
-- GET Title and link announcment
-'''
 
 from bs4 import BeautifulSoup
 import pandas as pd
+import numpy as np
 import requests
 
 url = ''
-cities = ['villarosa']
-i_cities = -1
+num_page = None
+
+
 column_name = []
-current_page = 1
+current_page = 2
 stop_scraping = False
+df = pd.DataFrame()
 
 
 def main():
     while True:
-        global df
-        global url
-        
+        stop_scraping = set_url()
 
-        print('current url:')
-        print(url)
-
-        if url != '':
-            manage_next_page()
-
-        global stop_scraping
         if(stop_scraping):
+            df.to_csv('web_scraping.csv', index=False)  
             break
 
-        set_url()
-
-        html_entities = ['ul', 'class', 'nd-list in-realEstateResults']
-        imm_data = get_home_link(get_html_results(html_entities))
-        if len(column_name) == 0:
-            set_column_name(imm_data)
-            df = pd.DataFrame(columns=column_name)
-        get_home_details(imm_data)
+        get_content_page()
 
         print('-----------------')
-    print(df.info())
-        
-def manage_next_page():
+
+def set_url():
+    stop_scraping = False
+    cities = ['firenze']
+    global i_cities
+    global num_page
+
     global url
-    global current_page
-    global stop_scraping
 
-    sub_url = 'https://www.immobiliare.it/vendita-case/' + cities[i_cities] + '/?pag='
-    sub_url_len = len(sub_url)
+    if url == '':
+        num_page = 1
+        i_cities = 0
+        url = 'https://www.immobiliare.it/vendita-case/' + cities[i_cities] + '/?pag=' + str(num_page)
+    else: 
+        #create new link page
+        num_page += 1
+        url_tmp = 'https://www.immobiliare.it/vendita-case/' + cities[i_cities] + '/?pag=' + str(num_page)
 
-    #NB: Cambiare il last_page_number e farla diventare variabile globale
-    last_page_number = int(url[sub_url_len:len(url)])
-    last_page_number += 1
+        #check if page is good for scraping
+        page = requests.get(url_tmp)
+        soup = BeautifulSoup(page.content, "html.parser")
 
-    entities = ['ul', 'class', 'nd-list in-realEstateResults']
-    #results = get_html_results(entities)
+        last_page =soup.find("div",{"class":"in-errorMessage__bg in-errorMessage__container"})
 
-    page = requests.get(url)
-    soup = BeautifulSoup(page.content, "html.parser")
-
-    home_overview = soup.find("section", {"class":"in-wrapper is-listView in-searchList--list in-searchList"})
-    print('home_overview')
-    print(home_overview)
-
-    if (home_overview is not None):
-        current_page += 1
-        tmp = sub_url + str(current_page)
-       
-        url = sub_url + str(current_page)
-        print(tmp)
-    else:
-        print('Ho preso il messaggio di errore!')
-        current_page = 1
-        if (len(cities) == i_cities):
-            stop_scraping = True
+        if(last_page is not None):
+            i_cities += 1
+            if(i_cities >= len(cities)):
+                stop_scraping = True
+            else:
+                num_page = 1
+                url_tmp = 'https://www.immobiliare.it/vendita-case/' + cities[i_cities] + '/?pag=' + str(num_page)
+                url = url_tmp
+        else:
+            url = url_tmp
 
     print(url)
 
+    return stop_scraping
 
-def set_url():
-    global url
-    global i_cities
-    num_pag = 1
+def get_content_page():
+    global column_name
+    global df
 
-    if url == '':
-        i_cities = i_cities + 1
-        url = 'https://www.immobiliare.it/vendita-case/' + cities[i_cities] + '/?pag=1'
-    else:
-        #num_pag += 1
-        pass
-    return url
-
-
-#METODO DA ELIMINARE - Controllare che da nessun'altra parte del codice non sia gia stato usato
-def get_html_results(html_entities):
     page = requests.get(url)
     soup = BeautifulSoup(page.content, "html.parser")
-    results = soup.find(html_entities[0], {html_entities[1]: html_entities[2]})
-
-    return results
+    results = soup.find('ul', {'class': 'nd-list in-realEstateResults'})
+    imm_data = get_home_link(results)
+    if len(column_name) == 0:
+        set_column_name(imm_data)
+        df = pd.DataFrame(columns=column_name)
+    get_home_details(imm_data)
 
 def get_home_link(results):
     data = []
@@ -147,6 +121,8 @@ def set_column_name(imm_data):
     column_name.insert(7, 'bagni')
 
 def get_home_details(imm_data):
+    global df
+    global column_name
 
     detail_house_dict = {}
     for i in column_name:
@@ -154,7 +130,7 @@ def get_home_details(imm_data):
     
     for index, el in imm_data.iterrows():
         url_detail = el.Link
-        #print(url_detail)
+        print(url_detail)
         
         detail_house_dict['url'] = el.Link
         detail_house_dict['titolo'] = el.Title
@@ -162,17 +138,22 @@ def get_home_details(imm_data):
         
         page_detail = requests.get(url_detail)
         soup_detail = BeautifulSoup(page_detail.content, "html.parser")
-        
-        location = soup_detail.find("a", {"class": "in-titleBlock__link"}) 
+
+        location = soup_detail.find("div", {"class": "in-titleBlock__content"}) 
         location_detail = location.find_all("span", class_="in-location")
-            
-        for i in range (0, 3):
-            if i == 0 and len(location_detail) >= 1:
-                detail_house_dict['comune'] = location_detail[0].text
-            if i == 1 and len(location_detail) >= 2:
-                detail_house_dict['quartiere'] = location_detail[1].text
-            if i == 2 and len(location_detail) >= 3:
-                detail_house_dict['indirizzo'] = location_detail[2].text
+
+        if len(location_detail) == 1:
+            detail_house_dict['comune'] = location_detail[0].text
+            detail_house_dict['quartiere'] = np.nan
+            detail_house_dict['indirizzo'] = np.nan
+        if len(location_detail) == 2:
+            detail_house_dict['comune'] = location_detail[0].text
+            detail_house_dict['quartiere'] = location_detail[1].text
+            detail_house_dict['indirizzo'] = np.nan
+        if len(location_detail) >= 3:
+            detail_house_dict['comune'] = location_detail[0].text
+            detail_house_dict['quartiere'] = location_detail[1].text
+            detail_house_dict['indirizzo'] = location_detail[2].text
                 
         results = soup_detail.find("ul", {"class", "nd-list nd-list--pipe in-feat in-feat--full in-feat__mainProperty in-landingDetail__mainFeatures"})
         main_feature = results.find_all("li", class_="nd-list__item in-feat__item")
@@ -183,8 +164,6 @@ def get_home_details(imm_data):
             elif(el.get("aria-label") == 'superficie'):
                 detail_house_dict['superficiem^2'] = el.text
             elif(el.get("aria-label") == 'bagno'):
-                detail_house_dict["bagni"] = el.text
-            elif(el.get("aria-label") == 'asd'):
                 detail_house_dict["bagni"] = el.text
                 
         results = soup_detail.find("section", {"class": "in-wrapper is-detailView in-landingDetail"})
@@ -199,10 +178,20 @@ def get_home_details(imm_data):
         
         # Convertire il dictionary in list portando solo i 'valori' nell'ordine
         lst_value = []
+
         
         for dh in detail_house_dict:
-            lst_value.append(detail_house_dict[dh])
+            #check if column exist
             
+            if(dh not in column_name):
+                column_name.append(dh)
+                df[dh] = np.nan
+
+            lst_value.append(detail_house_dict[dh])
+
+        if(url_detail == 'https://www.immobiliare.it/annunci/101619683/'):
+            print(lst_value)   
+
         df.loc[len(df)] = lst_value
     return True
 
