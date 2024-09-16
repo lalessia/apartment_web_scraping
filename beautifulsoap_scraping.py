@@ -4,6 +4,9 @@ import pandas as pd
 import numpy as np
 import requests
 
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+
 url = ''
 num_page = None
 
@@ -19,7 +22,9 @@ def main():
         stop_scraping = set_url()
 
         if(stop_scraping):
-            df.to_csv('web_scraping.csv', index=False)  
+            filename = 'web_scraping','240916', '.csv'
+            print(filename)
+            df.to_csv('web_scraping02.csv', index=False)  
             break
 
         get_content_page()
@@ -33,6 +38,11 @@ def set_url():
     global num_page
 
     global url
+
+    '''NEW CODE'''
+    stop_scraping = get_id_Zone()
+
+    '''END NEW CODE'''
 
     if url == '':
         num_page = 1
@@ -63,6 +73,15 @@ def set_url():
     print(url)
 
     return stop_scraping
+
+def get_id_Zone():
+    id_zone = []
+    print('url' + url)
+    driver = webdriver.Chrome()
+    driver.get(url)
+    s = Service('/System/Volumes/Data/opt/homebrew/bin/chromedriver')
+    driver = webdriver.Chrome(service=s)
+    return True
 
 def get_content_page():
     global column_name
@@ -131,6 +150,8 @@ def get_home_details(imm_data):
     for index, el in imm_data.iterrows():
         url_detail = el.Link
         print(url_detail)
+
+        #url_detail = 'https://www.immobiliare.it/annunci/102256954/'
         
         detail_house_dict['url'] = el.Link
         detail_house_dict['titolo'] = el.Title
@@ -139,8 +160,12 @@ def get_home_details(imm_data):
         page_detail = requests.get(url_detail)
         soup_detail = BeautifulSoup(page_detail.content, "html.parser")
 
+
         location = soup_detail.find("div", {"class": "in-titleBlock__content"}) 
         location_detail = location.find_all("span", class_="in-location")
+
+        if (location is None):
+            print('Test')
 
         if len(location_detail) == 1:
             detail_house_dict['comune'] = location_detail[0].text
